@@ -1,0 +1,25 @@
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: #04070c;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+body {
+  background: radial-gradient(ellipse at center, #0c1a26 0%, #04070c 70%);
+}
+#wrap {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#game {
+  display: block;
+  box-shadow: 0 0 60px rgba(40, 160, 220, 0.18), 0 0 0 1px rgba(120, 200, 255, 0.08);
+  cursor: default;
+}
