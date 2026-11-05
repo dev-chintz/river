@@ -99,7 +99,7 @@
           const a = Math.random() * Math.PI * 2, v = G.rand(30, 140) * sc;
           this.add({ kind: 'smoke', img: G.S.foam, x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: G.rand(0.6, 1.4), s0: G.rand(8, 16) * sc, s1: G.rand(20, 40) * sc, a: 0.8, drag: 0.6 });
         }
-        G.audio.splash();
+        G.audio.splash(x);
       }
       if (ground) {
         this.decals.push({ x, y, s: G.rand(0.8, 1.2) * sc, rot: Math.random() * 6, a: 0.9 });

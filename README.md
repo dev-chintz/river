@@ -53,4 +53,19 @@ Działa też gamepad (gałka, A, X/RB, Start) i dotyk (przeciągnij palcem, dwa 
 - `js/level.js`: sektory, układ kanionów, wygląd sektorów i rozmieszczanie przeciwników
 - `js/game.js`: logika rozgrywki
 - `js/ui.js`: HUD i menu
-- `js/audio.js`: syntezowane efekty i muzyka
+- `js/audio.js`: warstwa dźwiękowa (próbki, miks, muzyka z płynnymi pętlami; zapasowa synteza WebAudio)
+- `js/audio-sfx.js`, `js/audio-music.js`: wygenerowane próbki zakodowane base64 (nie edytować ręcznie)
+- `audio/`: te same próbki jako pliki mp3
+- `tools/generate-audio.mjs`: generator dźwięków (ElevenLabs)
+
+## Dźwięk
+
+Efekty i muzyka powstały w ElevenLabs (Sound Effects i Music API). Gra zawiera gotowe pliki, więc do grania klucz nie jest potrzebny.
+
+Żeby wygenerować coś od nowa, wpisz klucz do `.env` (`ELEVENLABS_API_KEY=...`, plik jest w `.gitignore`) i uruchom:
+
+```bash
+node tools/generate-audio.mjs --only=shoot_1,boss --force
+```
+
+Bez `--force` generator pomija istniejące pliki, więc kredyty nie przepadają. Opisy dźwięków i utworów są na górze skryptu. Po każdym uruchomieniu skrypt przebudowuje `js/audio-*.js`.

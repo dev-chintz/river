@@ -75,10 +75,23 @@
     P.moved = false;
   }
 
+  // Utwór dobrany do sytuacji: menu, sektory dzienne/wieczorne, boss.
+  function musicFor() {
+    const g = S.game;
+    if (S.state === 'menu' || S.state === 'controls' || S.state === 'scores') return 'menu';
+    if (S.state === 'results') return S.resT > 4 ? 'menu' : null;
+    if (!g || g.finished) return null;
+    const b = g.boss;
+    if (b && (b.state === 'enter' || b.state === 'fight')) return 'boss';
+    return g.sectorIdx % 8 >= 4 ? 'level_b' : 'level_a';
+  }
+
   function update(dt) {
     const I = G.Input;
     S.t += dt;
     if (I.hit('music')) G.audio.toggleMusic();
+    G.audio.setPaused(S.state === 'pause');
+    G.audio.setMusic(musicFor());
 
     if (S.state === 'menu') {
       S.attract.update(dt);

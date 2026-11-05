@@ -142,7 +142,7 @@
       if (lv >= 4) { add(-24, -0.26); add(24, 0.26); }
       g.fx.muzzle(this.x - 8, this.y + 34);
       g.fx.muzzle(this.x + 8, this.y + 34);
-      G.audio.shoot();
+      G.audio.shoot(this.x);
     }
 
     launchMissile() {
@@ -195,7 +195,7 @@
       g.fx.doFlash(0.6, '255,210,160');
       g.fx.shake(16);
       g.slowmo(0.7);
-      G.audio.explosion(true);
+      G.audio.explosion(true, this.x);
       g.onPlayerDeath(reason);
     }
 
@@ -302,14 +302,14 @@
       this.hp -= dmg;
       this.flash = 0.07;
       if (this.hp <= 0) this.die();
-      else G.audio.hit();
+      else G.audio.hit(this.x);
     }
     die(silent) {
       if (this.dead) return;
       this.dead = true;
       const g = this.g;
       g.fx.explosion(this.x, this.y, this.expl, { water: this.water, ground: this.ground });
-      G.audio.explosion(this.expl > 1.4);
+      G.audio.explosion(this.expl > 1.4, this.x);
       if (!silent) g.onKill(this);
     }
     baseUpdate(dt) {
@@ -379,7 +379,7 @@
         if (this.fireT <= 0 && this.sy < g.player.sy - 120) {
           this.fireT = G.rand(2.2, 3.6) / (1 + g.difficulty * 0.06);
           this.shoot(this.aimAt(), 230 + g.difficulty * 8);
-          G.audio.enemyShot();
+          G.audio.enemyShot(this.x);
         }
       }
     }
@@ -530,7 +530,7 @@
         if (this.fireT <= 0) {
           this.fireT = G.rand(1.6, 2.6);
           this.shoot(Math.PI, 260, { col: '#ff3b6b' });
-          G.audio.enemyShot();
+          G.audio.enemyShot(this.x);
         }
       }
     }
@@ -604,7 +604,7 @@
           const mx = this.x + Math.sin(this.ang) * 22, my = this.y + Math.cos(this.ang) * 22;
           this.shoot(this.ang, 250 + g.difficulty * 10, { x: mx, y: my, col: '#ffa23a' });
           g.fx.add({ kind: 'glow', img: G.glow('#ffb84a'), x: mx, y: my, vx: 0, vy: 0, life: 0.08, s0: 26, s1: 14 });
-          G.audio.enemyShot();
+          G.audio.enemyShot(this.x);
         }
       }
     }
@@ -704,7 +704,7 @@
           const a = this.aimAt();
           const n = g.difficulty >= 5 ? 7 : 5;
           for (let i = 0; i < n; i++) this.shoot(a + (i - (n - 1) / 2) * 0.16, 240, { y: this.y - 30, col: '#ff7a2a', r: 6 });
-          G.audio.enemyShot();
+          G.audio.enemyShot(this.x);
         }
       } else {
         this.ssy -= 160 * dt;

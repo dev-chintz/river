@@ -74,6 +74,7 @@
       else if (this.mode === 'time') sub = 'Zdobądź jak najwięcej punktów';
       else sub = s && s.boss ? 'Sektor z fortecą wroga' : 'Nieskończona delta';
       this.banner = { title: 'SEKTOR ' + (this.sectorIdx + 1), sub, t: 0, boss: s && s.boss };
+      G.audio.sectorStart();
     }
 
     message(text, col) {
@@ -120,7 +121,7 @@
 
     onPickup(p) {
       const pl = this.player;
-      G.audio.pickup();
+      G.audio.pickup(p.type);
       this.fx.add({ kind: 'ring', x: p.x, y: p.y, vx: 0, vy: 0, life: 0.4, s0: 10, s1: 60, col: '255,255,255', w: 3 });
       if (p.type === 'W') {
         if (pl.wlevel < 4) {
@@ -174,7 +175,7 @@
       this.boss = new G.Boss(this, this.bossCount);
       this.boss.arenaEnd = s.arenaY1;
       this.message('WYKRYTO DUŻY OBIEKT', '#ff6a5a');
-      G.audio.alarm();
+      G.audio.bossAlert();
     }
 
     onBossKilled(b) {
@@ -217,6 +218,7 @@
       p.energy = 100;
       p.inv = 3;
       p.alive = true;
+      G.audio.respawn();
       p.wlevel = Math.max(1, p.wlevel - 1);
       p.missiles = Math.max(p.missiles, 3);
       this.eBullets.length = 0;
@@ -232,6 +234,10 @@
       if (this.finished) return;
       this.finished = true;
       this.won = won;
+      if (this.mode !== 'attract') {
+        if (won) G.audio.victory();
+        else G.audio.gameOver();
+      }
       this.finishT = won ? 3.5 : 2.5;
     }
 
@@ -493,7 +499,7 @@
         const sy = SY(this, m.y);
         if (hit || m.life <= 0) {
           this.fx.explosion(m.x, m.y, 0.6, {});
-          G.audio.explosion(false);
+          G.audio.explosion(false, m.x);
           for (const e of this.enemies) {
             if (!e.dead && G.dist2(m.x, m.y, e.x, e.y) < 55 * 55) e.hit(3);
           }

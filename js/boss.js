@@ -55,11 +55,11 @@
         if (G.dist2(x, y, tx, ty) < 26 * 26) {
           t.hp -= dmg;
           t.flash = 0.07;
-          G.audio.hit();
+          G.audio.hit(x);
           if (t.hp <= 0) {
             t.alive = false;
             g.fx.explosion(tx, ty, 2);
-            G.audio.explosion(true);
+            G.audio.explosion(true, tx);
             g.addScore(1500, tx, ty);
             g.fx.popup(tx, ty + 30, 'WIEŻA ZNISZCZONA', '#ffd36a', 15);
             if (!this.shielded()) {
@@ -78,7 +78,7 @@
         } else {
           this.core.hp -= dmg;
           this.core.flash = 0.07;
-          G.audio.hit();
+          G.audio.hit(x);
           if (this.core.hp <= 0) this.startDeath();
         }
         return true;
@@ -138,7 +138,7 @@
         if (Math.random() < dt * 14) {
           const ex = this.x + G.rand(-140, 140), ey = this.y + G.rand(-80, 80);
           g.fx.explosion(ex, ey, G.rand(0.8, 1.6), { water: false });
-          G.audio.explosion(false);
+          G.audio.explosion(false, ex);
         }
         this.ssy -= 10 * dt;
         if (this.deathT > 2.8) {
@@ -146,7 +146,7 @@
           g.fx.explosion(this.x, this.y, 4.5, { water: true });
           g.fx.doFlash(1, '255,240,210');
           g.fx.shake(24);
-          G.audio.explosion(true);
+          G.audio.explosion(true, this.x);
           g.onBossKilled(this);
         }
         return;
@@ -174,7 +174,7 @@
             this.fire(mx, my, t.ang + 0.12, 270, '#ffa23a');
             this.fire(mx, my, t.ang - 0.12, 270, '#ffa23a');
             g.fx.add({ kind: 'glow', img: G.glow('#ffb84a'), x: mx, y: my, vx: 0, vy: 0, life: 0.08, s0: 34, s1: 16 });
-            G.audio.enemyShot();
+            G.audio.enemyShot(mx);
           }
         }
       }
@@ -193,7 +193,7 @@
           if (Math.cos(a) > 0.55) continue; // nie strzela "do tyłu" w górę ekranu
           this.fire(cx, cy, a, enraged ? 190 : 160, '#ff3b8a', 6);
         }
-        G.audio.enemyShot();
+        G.audio.enemyShot(cx);
         if (enraged && low && p.alive) {
           const aim = Math.atan2(p.x - cx, p.y - cy);
           for (let i = -1; i <= 1; i++) this.fire(cx, cy, aim + i * 0.08, 300, '#ffe14a', 5);
