@@ -24,48 +24,73 @@
       this.hurtT = 0;
       this.scrapeT = 0;
       this.trailT = 0;
+      this.sprayT = 0;
+      this.refuelT = 0;
+      this.warnL = 0;
+      this.warnR = 0;
       this.t = 0;
+    }
+
+    // Punkty kadłuba sprawdzane przy kolizji z brzegiem (świat: +y = do przodu).
+    hitPoints() {
+      const sx = 1 - Math.abs(this.bank) * 0.28;
+      return [[0, 37], [-11 * sx, 14], [11 * sx, 14], [-29 * sx, -16], [29 * sx, -16], [-14 * sx, -31], [14 * sx, -31]];
     }
 
     update(dt) {
       const g = this.g, I = G.Input;
       this.t += dt;
+      this.refuelT = Math.max(0, this.refuelT - dt);
       if (!this.alive) {
         this.deadT -= dt;
         this.y = g.camY + 190;
+        this.warnL = this.warnR = 0;
         if (this.deadT <= 0) g.respawn();
         return;
       }
-      let target = I.axisX() * 390;
-      if (I.touch.active) target = G.clamp((I.touch.x - this.x) * 7, -440, 440);
-      this.vx += (target - this.vx) * Math.min(1, dt * 9);
+      // tylko na boki: maszyna leci z nurtem, przepustnica zmienia prędkość przewijania
+      const MAXV = 330;
+      let target = I.axisX() * MAXV;
+      if (I.touch.active) target = G.clamp((I.touch.x - this.x) * 7, -MAXV, MAXV);
+      this.vx += (target - this.vx) * Math.min(1, dt * 8);
       this.x = G.clamp(this.x + this.vx * dt, 18, W - 18);
-      this.bank += (this.vx / 390 - this.bank) * Math.min(1, dt * 7);
+      this.bank += (this.vx / MAXV - this.bank) * Math.min(1, dt * 7);
       this.y = g.camY + 190 + g.throttleOffset;
       this.inv = Math.max(0, this.inv - dt);
       this.hurtT = Math.max(0, this.hurtT - dt);
 
-      // kolizja z lądem
+      // brzeg rzeki: każdy kontakt kończy lot (podczas osłony po odrodzeniu tylko odpycha)
       const R = g.river;
-      let onLand = 0;
-      const pts = [[0, 26], [-24, -2], [24, -2], [0, -26]];
-      for (const [dx, dy] of pts) if (!R.isWater(this.x + dx, this.y + dy)) onLand++;
-      if (onLand) {
-        const sp = R.spanAt(this.x, this.y);
-        const mid = (sp[0] + sp[1]) / 2;
-        const dir = Math.sign(mid - this.x) || 1;
-        this.x += dir * 160 * dt;
-        this.vx = this.vx * 0.6 + dir * 60;
-        if (this.inv <= 0) this.damage(85 * dt * onLand * 0.5, true);
-        this.scrapeT -= dt;
-        if (this.scrapeT <= 0) {
-          this.scrapeT = 0.05;
-          g.fx.spark(this.x - dir * 20, this.y, 3, '#ffcf7a', 260);
-          g.fx.smokePuff(this.x - dir * 20, this.y - 10, 12, true);
-          G.audio.scrape();
-          g.fx.shake(3);
+      let hit = null;
+      for (const [dx, dy] of this.hitPoints()) {
+        if (!R.isWater(this.x + dx, this.y + dy)) { hit = [this.x + dx, this.y + dy]; break; }
+      }
+      if (hit) {
+        if (this.inv > 0) {
+          const sp = R.spanAt(this.x, this.y);
+          const dir = Math.sign((sp[0] + sp[1]) / 2 - this.x) || 1;
+          this.x += dir * 240 * dt;
+          this.vx = this.vx * 0.5 + dir * 90;
+          this.scrapeT -= dt;
+          if (this.scrapeT <= 0) {
+            this.scrapeT = 0.08;
+            g.fx.spark(hit[0], hit[1], 4, '#8ff6ff', 220);
+          }
+        } else {
+          this.crash(hit);
+          return;
         }
       }
+      // ostrzeżenie o bliskości ściany
+      const sxw = 29 * (1 - Math.abs(this.bank) * 0.28);
+      let dl = 1e9, dr = 1e9;
+      for (const oy of [-16, 30, 90]) {
+        const sp = R.spanAt(this.x, this.y + oy);
+        dl = Math.min(dl, this.x - sxw - sp[0]);
+        dr = Math.min(dr, sp[1] - this.x - sxw);
+      }
+      this.warnL = G.clamp(1 - dl / 34, 0, 1);
+      this.warnR = G.clamp(1 - dr / 34, 0, 1);
 
       // reaktor
       this.energy -= g.drainRate() * dt;
@@ -73,6 +98,18 @@
         this.energy = 0;
         this.kill('energy');
         return;
+      }
+
+      // podmuch silników marszczy wodę pod cieniem maszyny
+      this.sprayT -= dt;
+      if (this.sprayT <= 0) {
+        this.sprayT = 0.035;
+        const wx = this.x + 38, wy = this.y - 52;
+        if (R.isWater(wx, wy)) {
+          for (const s of [-1, 1]) {
+            g.fx.add({ kind: 'smoke', img: G.S.foam, x: wx + s * G.rand(4, 14), y: wy + G.rand(-6, 6), vx: s * G.rand(30, 70), vy: G.rand(-25, 5), life: G.rand(0.5, 0.9), s0: 4, s1: 15, a: 0.22 + 0.12 * G.clamp((g.speed - 120) / 180, 0, 1), drag: 0.3 }, 'water');
+          }
+        }
       }
 
       // ogień
@@ -117,18 +154,35 @@
       G.audio.missile();
     }
 
-    damage(a, terrain) {
+    refuel(dt) {
+      if (this.energy < 100) {
+        this.energy = Math.min(100, this.energy + 46 * dt);
+        G.audio.refuel(this.energy / 100);
+      }
+      this.refuelT = 0.15;
+    }
+
+    damage(a) {
       if (this.inv > 0 || !this.alive) return;
       this.hull -= a;
-      if (!terrain) {
-        this.hurtT = 0.25;
-        this.g.fx.shake(7);
-        G.audio.hurt();
-      }
+      this.hurtT = 0.25;
+      this.g.fx.shake(7);
+      G.audio.hurt();
       if (this.hull <= 0) {
         this.hull = 0;
         this.kill('hull');
       }
+    }
+
+    // Uderzenie w brzeg: wybuch na skale, odłamki, ślad na ziemi.
+    crash(pt) {
+      const g = this.g;
+      g.fx.explosion(pt[0], pt[1], 1.4, { ground: true });
+      g.fx.spark(pt[0], pt[1], 26, '#ffd27a', 520);
+      for (let i = 0; i < 8; i++) {
+        g.fx.add({ kind: 'debris', x: pt[0], y: pt[1], vx: G.rand(-260, 260), vy: G.rand(-200, 260), life: G.rand(0.8, 1.5), s0: G.rand(3, 6), rot: Math.random() * 6, vr: G.rand(-14, 14), drag: 0.2, col: G.pick(['#6f7a86', '#c3ccd3', '#2a3036']) });
+      }
+      this.kill('wall');
     }
 
     kill(reason) {
@@ -136,8 +190,11 @@
       const g = this.g;
       this.alive = false;
       this.deadT = 2.4;
+      this.warnL = this.warnR = 0;
       g.fx.explosion(this.x, this.y, 2.2, { water: g.river.isWater(this.x, this.y) });
       g.fx.doFlash(0.6, '255,210,160');
+      g.fx.shake(16);
+      g.slowmo(0.7);
       G.audio.explosion(true);
       g.onPlayerDeath(reason);
     }
@@ -159,17 +216,31 @@
       const thr = G.clamp((g.speed - 95) / 205, 0, 1);
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
+      const ab = G.clamp((g.speed - 200) / 100, 0, 1); // dopalacz
       for (const s of [-1, 1]) {
         const fl = 0.8 + Math.random() * 0.4;
-        const len = (18 + thr * 30) * fl;
+        const len = (18 + thr * 30 + ab * 22) * fl;
         const ex = this.x + s * 3.2 * sx;
         ctx.globalAlpha = 0.9;
-        ctx.drawImage(G.glow('#4cc9ff'), ex - 7, sy + 34, 14, len);
+        ctx.drawImage(G.glow(ab > 0.3 ? '#ff9a4a' : '#4cc9ff'), ex - 7 - ab * 2, sy + 34, 14 + ab * 4, len);
         ctx.globalAlpha = 0.8;
         ctx.drawImage(G.glow('#ffffff'), ex - 3, sy + 34, 6, len * 0.5);
+        // diamenty uderzeniowe w strumieniu dopalacza
+        if (ab > 0) {
+          ctx.globalAlpha = 0.55 * ab;
+          for (let i = 1; i <= 3; i++) {
+            const dy = sy + 34 + i * len * 0.2;
+            ctx.drawImage(G.glow('#ffe2a8'), ex - 3.5, dy - 3, 7, 6);
+          }
+        }
       }
       ctx.globalAlpha = 0.35 + thr * 0.3;
-      ctx.drawImage(G.glow('#3aa8ff'), this.x - 22, sy + 22, 44, 44);
+      ctx.drawImage(G.glow(ab > 0.3 ? '#ff8a3a' : '#3aa8ff'), this.x - 22, sy + 22, 44, 44);
+      // poświata tankowania
+      if (this.refuelT > 0) {
+        ctx.globalAlpha = 0.35 + 0.2 * Math.sin(this.t * 30);
+        ctx.drawImage(G.glow('#3ce8ff'), this.x - 50, sy - 50, 100, 100);
+      }
       ctx.restore();
       G.draw(ctx, G.S.player, this.x, sy, this.bank * 0.06, sx, 1);
       // światła pozycyjne
@@ -314,26 +385,106 @@
     }
     draw(ctx) {
       const sy = this.sy;
-      const rot = Math.PI - this.heading; // sprite: dziób w górę
-      const r = -this.heading + Math.PI;
-      void rot;
+      const rot = this.heading; // sprite: dziób w górę ekranu
       // fala dziobowa
       ctx.save();
       ctx.globalAlpha = 0.5;
       ctx.translate(this.x, sy);
-      ctx.rotate(this.screenRot());
+      ctx.rotate(rot);
       ctx.drawImage(G.S.foam, -18, -40, 36, 22);
       ctx.restore();
-      G.draw(ctx, G.S.boat, this.x, sy, this.screenRot());
-      this.drawFlash(ctx, G.S.boat, this.x, sy, this.screenRot());
-      void r;
-    }
-    screenRot() {
-      // kierunek świata (sin h, cos h) -> ekran (sin h, -cos h); sprite wskazuje w górę ekranu
-      return this.heading;
+      G.draw(ctx, G.S.boatShadow, this.x + 4, sy + 5, rot, 1, 1, 0.3);
+      G.draw(ctx, G.S.boat, this.x, sy, rot);
+      this.drawFlash(ctx, G.S.boat, this.x, sy, rot);
     }
   }
   G.Boat = Boat;
+
+  // ----- Pływająca stacja energii -----
+  // Przelot nad nią uzupełnia reaktor; można ją też (niechcący) zestrzelić.
+  class Depot extends Enemy {
+    constructor(g, x, y) {
+      super(g, x, y);
+      this.kind = 'depot';
+      this.water = true;
+      this.hp = 4;
+      this.r = 26;
+      this.score = 80;
+      this.drop = 0;
+      this.expl = 1.6;
+      this.fuelling = false;
+      this.beamT = 0;
+    }
+    update(dt) {
+      this.baseUpdate(dt);
+      const g = this.g, p = g.player;
+      this.fuelling = false;
+      if (p.alive && Math.abs(p.x - this.x) < 32 && Math.abs(p.y - this.y) < 48) {
+        this.fuelling = true;
+        p.refuel(dt);
+        this.beamT -= dt;
+        if (this.beamT <= 0 && p.energy < 100) {
+          this.beamT = 0.03;
+          const a = Math.random() * TAU;
+          g.fx.add({ kind: 'glow', img: G.glow('#3ce8ff'), x: this.x + Math.cos(a) * 20, y: this.y + Math.sin(a) * 26, vx: (p.x - this.x) * 3, vy: (p.y - this.y) * 3 + g.speed, life: 0.3, s0: 12, s1: 4 });
+        }
+      }
+    }
+    die(silent) {
+      if (this.dead) return;
+      super.die(silent);
+      const g = this.g;
+      g.fx.add({ kind: 'glow', img: G.glow('#3ce8ff'), x: this.x, y: this.y, vx: 0, vy: 0, life: 0.5, s0: 80, s1: 220 });
+      g.fx.add({ kind: 'ring', x: this.x, y: this.y, vx: 0, vy: 0, life: 0.6, s0: 20, s1: 140, col: '120,240,255', w: 5 });
+      if (!silent) g.fx.popup(this.x, this.y + 40, 'STACJA ZNISZCZONA', '#8ff6ff', 13);
+    }
+    draw(ctx) {
+      const sy = this.sy;
+      const t = this.t;
+      // krąg fal wokół pontonu
+      ctx.save();
+      ctx.globalAlpha = 0.45;
+      ctx.drawImage(G.S.foam, this.x - 40, sy - 46, 80, 92);
+      ctx.restore();
+      G.draw(ctx, G.S.depotShadow, this.x + 6, sy + 7, 0, 1, 1, 0.35);
+      G.draw(ctx, G.S.depot, this.x, sy, 0, 1 + Math.sin(t * 2) * 0.01);
+      this.drawFlash(ctx, G.S.depot, this.x, sy, 0);
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const p = 0.7 + 0.3 * Math.sin(t * 5);
+      const k = this.fuelling ? 1.6 : 1;
+      ctx.globalAlpha = 0.6 * p;
+      ctx.drawImage(G.glow('#22d8ff'), this.x - 34 * k, sy - 34 * k, 68 * k, 68 * k);
+      // wiązka energii do maszyny
+      if (this.fuelling && this.g.player.energy < 100) {
+        const pl = this.g.player;
+        const psy = SY(this.g, pl.y);
+        ctx.lineCap = 'round';
+        ctx.globalAlpha = 0.3 + 0.15 * Math.sin(t * 40);
+        ctx.strokeStyle = '#22d8ff';
+        ctx.lineWidth = 14;
+        ctx.beginPath(); ctx.moveTo(this.x, sy); ctx.lineTo(pl.x, psy); ctx.stroke();
+        ctx.globalAlpha = 0.7;
+        ctx.strokeStyle = '#e6fdff';
+        ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(this.x, sy); ctx.lineTo(pl.x + Math.sin(t * 50) * 2, psy); ctx.stroke();
+      }
+      // ogniwa energii
+      for (let i = 0; i < 3; i++) {
+        const on = Math.floor(t * 4 + i) % 3 !== 0 || this.fuelling;
+        ctx.globalAlpha = on ? 0.95 : 0.35;
+        ctx.drawImage(G.glow('#7ff4ff'), this.x - 7, sy - 22 + i * 15 - 7, 14, 14);
+      }
+      // światła obrysowe
+      if (Math.floor(t * 2.2) % 2 === 0) {
+        ctx.globalAlpha = 1;
+        ctx.drawImage(G.glow('#ffffff'), this.x - 22, sy - 32, 10, 10);
+        ctx.drawImage(G.glow('#ffffff'), this.x + 12, sy + 22, 10, 10);
+      }
+      ctx.restore();
+    }
+  }
+  G.Depot = Depot;
 
   // ----- Dron -----
   class Drone extends Enemy {

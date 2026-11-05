@@ -16,9 +16,13 @@
     scale = G.clamp((ch * dpr) / H, 1, 2);
     canvas.width = Math.round(W * scale);
     canvas.height = Math.round(H * scale);
+    G.renderScale = canvas.height / H;
+    // rozdzielczość kafli terenu dopasowana do ekranu (nowe kafle po zmianie rozmiaru)
+    G.terrainScale = Math.min(2, Math.max(1, Math.round(G.renderScale * 2) / 2));
   }
   window.addEventListener('resize', resize);
   resize();
+  G.canvas = canvas;
 
   G.initSprites();
   G.Input.attach(canvas);
@@ -139,23 +143,22 @@
     }
   }
 
-  // stały krok symulacji
-  const STEP = 1 / 60;
-  let acc = 0, last = performance.now();
+  // Jedna aktualizacja na klatkę ekranu (płynnie także przy 120/144 Hz);
+  // długie klatki dzielone na kroki nie dłuższe niż 1/60 s.
+  const MAXSTEP = 1 / 60;
+  let last = performance.now();
   function frame(now) {
     let dt = (now - last) / 1000;
     last = now;
-    if (dt > 0.25) dt = 0.25;
-    acc += dt;
-    let steps = 0;
-    while (acc >= STEP && steps < 5) {
+    if (dt > 0.1) dt = 0.1;
+    if (dt > 0) {
+      const n = Math.max(1, Math.ceil(dt / MAXSTEP - 0.05));
       G.Input.poll();
-      update(STEP);
-      G.Input.endFrame();
-      acc -= STEP;
-      steps++;
+      for (let i = 0; i < n; i++) {
+        update(dt / n);
+        if (i === 0) G.Input.endFrame();
+      }
     }
-    if (steps === 5) acc = 0;
     draw();
     requestAnimationFrame(frame);
   }

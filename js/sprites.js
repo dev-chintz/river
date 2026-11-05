@@ -358,6 +358,59 @@
     x.beginPath(); x.arc(0, 0, 10, 0, TAU); x.stroke();
   }
 
+  // ---------- Stacja energii (ponton) ----------
+  function drawDepot(x) {
+    // pływaki boczne
+    for (const s of [-1, 1]) {
+      x.fillStyle = lin(x, s * 16, 0, s * 26, 0, [[0, '#5d6772'], [0.5, '#c9d2da'], [1, '#3a424b']]);
+      G.roundRect(x, s > 0 ? 15 : -26, -30, 11, 60, 5);
+      x.fill();
+      x.fillStyle = '#e8453c';
+      x.fillRect(s > 0 ? 15 : -26, -6, 11, 3);
+      x.fillRect(s > 0 ? 15 : -26, 3, 11, 3);
+    }
+    // pokład
+    x.fillStyle = lin(x, -16, -30, 16, 30, [[0, '#59636e'], [0.5, '#2f363e'], [1, '#1b2026']]);
+    G.roundRect(x, -17, -34, 34, 68, 6);
+    x.fill();
+    x.strokeStyle = '#11151a';
+    x.lineWidth = 1.2;
+    x.stroke();
+    // pasy ostrzegawcze na końcach
+    x.save();
+    G.roundRect(x, -17, -34, 34, 68, 6);
+    x.clip();
+    for (let i = -4; i < 5; i++) {
+      x.fillStyle = i % 2 ? '#1a1a1a' : '#e8b62c';
+      x.beginPath();
+      x.moveTo(i * 8, -34); x.lineTo(i * 8 + 4, -34); x.lineTo(i * 8 + 10, -28); x.lineTo(i * 8 + 6, -28);
+      x.fill();
+      x.beginPath();
+      x.moveTo(i * 8, 28); x.lineTo(i * 8 + 4, 28); x.lineTo(i * 8 + 10, 34); x.lineTo(i * 8 + 6, 34);
+      x.fill();
+    }
+    x.restore();
+    // kolumna ogniw
+    x.fillStyle = '#0a1a24';
+    G.roundRect(x, -9, -27, 18, 46, 4);
+    x.fill();
+    for (let i = 0; i < 3; i++) {
+      x.fillStyle = lin(x, -7, 0, 7, 0, [[0, '#0b6f8c'], [0.5, '#7ff4ff'], [1, '#0b6f8c']]);
+      G.roundRect(x, -7, -25 + i * 15, 14, 12, 3);
+      x.fill();
+    }
+    // oznaczenie
+    x.fillStyle = '#e6fdff';
+    x.font = `700 9px ${G.FONT}`;
+    x.textAlign = 'center';
+    x.textBaseline = 'middle';
+    x.fillText('ENERGIA', 0, 26);
+    // podświetlenie krawędzi
+    x.strokeStyle = 'rgba(255,255,255,0.25)';
+    x.lineWidth = 1;
+    x.beginPath(); x.moveTo(-16, -28); x.lineTo(-16, 28); x.stroke();
+  }
+
   // ---------- Boss: forteca poduszkowa ----------
   function drawBoss(x) {
     // fartuch poduszki
@@ -551,6 +604,9 @@
     S.player = G.sprite(80, 90, drawJet);
     S.playerShadow = G.silhouette(S.player, '#000');
     S.boat = G.sprite(30, 70, drawBoat);
+    S.boatShadow = G.silhouette(S.boat, '#001018');
+    S.depot = G.sprite(56, 76, drawDepot);
+    S.depotShadow = G.silhouette(S.depot, '#001018');
     S.drone = G.sprite(46, 46, drawDrone);
     S.droneShadow = G.silhouette(S.drone, '#000');
     S.gunship = G.sprite(70, 100, drawGunship);
@@ -572,6 +628,7 @@
     S.pineShadows = S.pines.map((t) => G.silhouette(t, '#000'));
     S.rocks = [];
     for (let i = 0; i < 4; i++) S.rocks.push(G.sprite(30, 26, drawRock(500 + i * 11)));
+    S.rockShadows = S.rocks.map((t) => G.silhouette(t, '#000'));
     S.houses = [
       G.sprite(28, 20, drawHouse(['#c75b3e', '#8e3a26'])),
       G.sprite(28, 20, drawHouse(['#6f7f8e', '#46535f'])),

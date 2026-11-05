@@ -6,8 +6,11 @@
   // ---------- rekordy ----------
   const KEY = 'ds_scores_v1';
   G.Scores = {
+    // wynik trzymany w pamięci: HUD pyta o rekord co klatkę
     all() {
-      try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { return {}; }
+      if (this._c) return this._c;
+      try { this._c = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { this._c = {}; }
+      return this._c;
     },
     get(mode) {
       return this.all()[mode] || [];
@@ -150,13 +153,13 @@
     }
     text(ctx, 'RAKIETY', W - 20, 72, 12, '#d49bff', 'right', 600, 2);
     for (let i = 0; i < p.missiles; i++) {
-      const x = W - 108 - i * 9;
+      const x = W - 24 - i * 9;
       ctx.fillStyle = '#e4d2ff';
-      ctx.fillRect(x - 2, 78, 4, 12);
+      ctx.fillRect(x - 2, 79, 4, 12);
       ctx.fillStyle = '#e8453c';
-      ctx.fillRect(x - 2, 78, 4, 3);
+      ctx.fillRect(x - 2, 79, 4, 3);
     }
-    if (p.missiles === 0) text(ctx, '—', W - 108, 90, 12, 'rgba(255,255,255,0.4)', 'right', 600);
+    if (p.missiles === 0) text(ctx, '—', W - 22, 91, 12, 'rgba(255,255,255,0.4)', 'right', 600);
 
     // boss
     if (g.boss && g.boss.state !== 'escape') {
@@ -175,9 +178,17 @@
     ctx.fillRect(0, H - 110, W, 110);
 
     const e = p.energy / 100;
-    const ecol = e > 0.5 ? ['#1fa8ff', '#4ff0ff'] : e > 0.25 ? ['#ffb020', '#ffe45a'] : ['#ff2a2a', '#ff7a4a'];
-    text(ctx, 'REAKTOR', W / 2 - 150, by + 8, 12, ecol[1], 'left', 700, 2);
+    const fuel = p.refuelT > 0 && p.alive;
+    const ecol = fuel ? ['#3ce8ff', '#e6fdff'] : e > 0.5 ? ['#1fa8ff', '#4ff0ff'] : e > 0.25 ? ['#ffb020', '#ffe45a'] : ['#ff2a2a', '#ff7a4a'];
+    text(ctx, fuel ? 'TANKOWANIE' : 'REAKTOR', W / 2 - 150, by + 8, 12, fuel && Math.floor(g.time * 8) % 2 ? '#ffffff' : ecol[1], 'left', 700, 2);
     text(ctx, Math.ceil(p.energy) + '%', W / 2 + 150, by + 8, 13, '#ffffff', 'right', 700);
+    if (fuel) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.35 + 0.15 * Math.sin(g.time * 20);
+      ctx.drawImage(G.glow('#3ce8ff'), W / 2 - 170, by + 2, 340, 42);
+      ctx.restore();
+    }
     bar(ctx, W / 2 - 150, by + 16, 300, 14, e, ecol, 20);
 
     text(ctx, 'PANCERZ', 20, by + 30, 11, '#7dffb0', 'left', 700, 2);
@@ -201,7 +212,7 @@
 
     // ostrzeżenie
     if (p.alive && p.energy < 25 && Math.floor(g.time * 3) % 2 === 0) {
-      text(ctx, '⚠ NISKA ENERGIA — LEĆ PRZEZ PIERŚCIENIE', W / 2, H - 120, 15, '#ff6a5a', 'center', 700, 1);
+      text(ctx, '⚠ NISKA ENERGIA: LEĆ NAD STACJĘ ENERGII', W / 2, H - 120, 15, '#ff6a5a', 'center', 700, 1);
     }
 
     // komunikaty
@@ -390,8 +401,9 @@
     }
     y += 50;
     const tips = [
-      'Reaktor stale się wyczerpuje. Lecąc przez niebieskie pierścienie,',
-      'odzyskujesz energię. Każde zestrzelenie też trochę jej dodaje.',
+      'Brzeg i każde zderzenie z wrogiem to koniec lotu. Trzymaj się nurtu.',
+      'Reaktor stale się wyczerpuje. Leć nad pływającą stacją energii,',
+      'najlepiej zwalniając. Nie strzelaj w nią! Pierścienie to bonus.',
       'Bramy z polem siłowym otwierasz, niszcząc oba generatory na brzegach.',
       'Szybkie serie zestrzeleń podnoszą mnożnik punktów (do x8).',
     ];

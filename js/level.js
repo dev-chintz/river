@@ -1,13 +1,29 @@
 'use strict';
-// Sektory, bramy, areny bossów i "reżyser" rozmieszczający przeciwników.
+// Sektory, bramy, kaniony, areny bossów i "reżyser" rozmieszczający przeciwników.
 (function (G) {
-  const W = G.W, H = G.H;
+  const W = G.W, H = G.H, TAU = Math.PI * 2;
 
   const NAMES = [
     'Ujście Delty', 'Zielone Rozlewiska', 'Kanion Wydry', 'Twierdza na Wodzie',
     'Mgliste Mokradła', 'Przełom Skalny', 'Czarny Nurt', 'Serce Delty',
   ];
   G.SECTOR_NAMES = NAMES;
+
+  // Wygląd sektorów: biom terenu + korekcja barwna (pora dnia, pogoda).
+  //  sl   – kolor nakładany w trybie soft-light (r,g,b,siła)
+  //  sun  – ciepłe światło słońca z lewego górnego rogu
+  //  top  – mgiełka atmosfery u góry ekranu, bot – przyciemnienie u dołu
+  //  fog  – równomierna mgła, cloud – ilość chmur (mnożnik krycia)
+  G.LOOKS = [
+    { biome: 0, sl: [255, 205, 150, 0.16], sun: [255, 222, 165, 0.2], top: [255, 236, 205, 0.07], bot: [0, 18, 36, 0.16], fog: 0, cloud: 0 },
+    { biome: 1, sl: [215, 255, 205, 0.1], sun: [255, 250, 225, 0.16], top: [215, 240, 255, 0.07], bot: [0, 22, 30, 0.14], fog: 0, cloud: 0 },
+    { biome: 2, sl: [255, 172, 95, 0.26], sun: [255, 196, 120, 0.24], top: [255, 205, 150, 0.09], bot: [30, 10, 0, 0.18], fog: 0, cloud: -0.3 },
+    { biome: 4, sl: [130, 165, 205, 0.28], sun: [205, 222, 255, 0.07], top: [190, 210, 232, 0.13], bot: [0, 10, 25, 0.22], fog: 0.04, cloud: 0.4 },
+    { biome: 3, sl: [175, 205, 190, 0.24], sun: [232, 240, 235, 0.09], top: [222, 234, 232, 0.3], bot: [10, 25, 25, 0.12], fog: 0.13, cloud: 0.8 },
+    { biome: 4, sl: [145, 185, 235, 0.22], sun: [222, 236, 255, 0.15], top: [205, 222, 255, 0.09], bot: [0, 8, 24, 0.2], fog: 0.02, cloud: 0 },
+    { biome: 1, sl: [95, 75, 165, 0.42], sun: [255, 125, 85, 0.22], top: [255, 135, 95, 0.12], bot: [12, 0, 32, 0.32], fog: 0, cloud: 0.2 },
+    { biome: 2, sl: [255, 145, 65, 0.36], sun: [255, 172, 85, 0.3], top: [255, 175, 115, 0.15], bot: [40, 0, 22, 0.22], fog: 0, cloud: 0 },
+  ];
 
   G.MODES = {
     campaign: { name: 'KAMPANIA', sectors: 8, bosses: [3, 6, 8], lives: 3 },
@@ -26,8 +42,9 @@
       this.rng = G.rng(seed * 3 + 1);
       this.sectors = [];
       this.nextSpawnY = 900;
-      this.ringY = 700;
-      this.ringT = 5;
+      this.ringY = 2600;
+      this.ringT = 14;
+      this.depotY = 1500;
       this.pickY = 2500;
       this.make(0);
     }
@@ -39,36 +56,71 @@
       return false;
     }
 
+    // 0..1: jak ciasna i kręta jest rzeka w danym sektorze
+    tightness(i) {
+      if (this.mode === 'attract') return 0.35;
+      if (this.mode === 'time') return G.clamp(i / 5, 0, 1);
+      return G.clamp(i / 7, 0, 1);
+    }
+
     make(i) {
       const r = this.rng;
       const prev = this.sectors[i - 1];
-      const start = prev ? prev.gateY : 0;
+      const start = prev ? prev.gateY : -3000;
       let len;
       if (this.mode === 'campaign') len = 5200 + i * 450;
       else if (this.mode === 'time') len = 4200;
       else len = 5000 + Math.min(i, 10) * 300;
-      const s = { i, start, boss: this.isBoss(i), name: this.mode === 'campaign' ? NAMES[i % NAMES.length] : null };
-      let islandEnd;
+      if (!prev) len += 3000;
+      const s = { i, start: prev ? start : 0, boss: this.isBoss(i), name: this.mode === 'campaign' ? NAMES[i % NAMES.length] : null };
+      s.look = i % G.LOOKS.length;
+      const tk = this.tightness(i);
+      let layoutEnd;
       if (s.boss) {
         s.arenaY0 = start + len;
         s.arenaY1 = s.arenaY0 + 4600;
         s.gateY = s.arenaY1 + 500;
         this.river.addFeature({ type: 'arena', y0: s.arenaY0, y1: s.arenaY1 });
-        islandEnd = s.arenaY0 - 1100;
+        layoutEnd = s.arenaY0 - 1000;
       } else {
         s.gateY = start + len;
-        islandEnd = s.gateY - 1100;
+        layoutEnd = s.gateY - 1050;
       }
+      this.river.addZone({ y0: start, y1: s.gateY, biome: G.LOOKS[s.look].biome, look: s.look, wk: G.lerp(1, 0.8, tk) });
       this.river.addFeature({ type: 'gate', y: s.gateY });
       // spokojny odcinek na start
       if (i === 0) this.river.addFeature({ type: 'calm', y0: -2000, y1: 700 });
-      // wyspy
-      let y = start + 1000 + r() * 600;
-      while (y < islandEnd - 700) {
-        const l = 700 + r() * 900;
-        if (y + l > islandEnd) break;
-        this.river.addFeature({ type: 'island', y0: y, y1: y + l, w: 55 + r() * 70 });
-        y += l + 900 + r() * 1700;
+
+      // przeplatane rozlewiska (czasem z wyspą) i wąskie, kręte kaniony
+      let y = Math.max(start, 0) + (i === 0 ? 1300 : 950);
+      let lastCanyon = this.mode !== 'attract' && i === 0;
+      while (y < layoutEnd - 600) {
+        if (!lastCanyon) {
+          const l = 900 + r() * 800 + tk * 900;
+          const y1 = Math.min(y + l, layoutEnd);
+          if (y1 - y < 550) break;
+          const period = G.lerp(1800, 1050, tk) * (0.85 + 0.3 * r());
+          const fr = TAU / period;
+          // stromość zakrętu ograniczona tak, by przy pełnym ciągu dało się nadążyć w bok
+          const amp = Math.min(G.lerp(30, 110, tk) * (0.6 + 0.4 * r()), 0.55 / fr);
+          this.river.addFeature({
+            type: 'canyon', y0: y, y1,
+            w: G.lerp(120, 84, tk) + (r() - 0.5) * 12,
+            amp,
+            fr,
+            ph: r() * TAU,
+            s: (r() - 0.5) * 1.0,
+          });
+          y = y1 + 650 + r() * 450;
+          lastCanyon = true;
+        } else {
+          const l = (i === 0 && y < 2000 ? 600 : 900) + r() * 800;
+          if (r() < 0.6 && y + l < layoutEnd - 450) {
+            this.river.addFeature({ type: 'island', y0: y, y1: y + l, w: 55 + r() * 70 });
+          }
+          y += l + 500 + r() * 400;
+          lastCanyon = false;
+        }
       }
       this.sectors.push(s);
       return s;
@@ -115,18 +167,26 @@
         const y = this.nextSpawnY;
         if (!this.noSpawnZone(y) && !g.boss) this.spawnAt(y);
         const d = g.difficulty;
-        this.nextSpawnY += G.rand(170, 330) / (1 + 0.11 * (d - 1));
+        this.nextSpawnY += G.rand(200, 360) / (1 + 0.1 * (d - 1));
         if (g.boss) this.nextSpawnY = Math.max(this.nextSpawnY, top + 200);
       }
-      // pierścienie energii: co dystans lub co czas (przy wolnym przewijaniu)
+      // pływające stacje energii (główne źródło paliwa)
+      while (this.depotY < top) {
+        const y = this.depotY;
+        const sec = this.sectorAt(y);
+        if (!(Math.abs(y - sec.gateY) < 420) && !(sec.boss && y > sec.arenaY0 - 300)) {
+          const x = g.river.randomWaterX(y, 46);
+          if (x !== null) g.enemies.push(new G.Depot(g, x, y));
+        }
+        this.depotY += G.rand(1500, 2200) * (1 + 0.03 * Math.min(10, g.difficulty - 1));
+      }
+      // pierścienie energii: rzadszy bonus; przy bossie co pewien czas
       this.ringT -= dt;
-      const lowE = g.player.energy < 35;
-      if (this.ringY < top || this.ringT <= 0) {
+      if (this.ringY < top || (g.boss && this.ringT <= 0)) {
         const y = Math.max(this.ringY, top);
         const x = g.river.randomWaterX(y, 45);
-        if (x !== null && !(Math.abs(y - (this.sectorAt(y).gateY)) < 200)) {
+        if (x !== null && !(Math.abs(y - this.sectorAt(y).gateY) < 200)) {
           g.rings.push(new G.Ring(g, x, y));
-          // czasem łańcuch pierścieni
           if (Math.random() < 0.3) {
             for (let k = 1; k <= 2; k++) {
               const yy = y + k * 110;
@@ -135,8 +195,8 @@
             }
           }
         }
-        this.ringY = y + (lowE ? G.rand(450, 650) : G.rand(700, 1050));
-        this.ringT = g.boss ? 5 : 9;
+        this.ringY = y + G.rand(2400, 3600);
+        this.ringT = 7;
       }
       // znajdźki z zaopatrzenia
       if (this.pickY < top) {
@@ -154,14 +214,15 @@
 
     spawnAt(y) {
       const g = this.g, d = g.difficulty, R = g.river;
+      const narrow = R.at(y).rock > 0.5;
       const opts = [
         ['boat', 30],
         ['drone', 18 + d * 3],
-        ['turret', 14 + d * 2],
+        ['turret', 14 + d * 2 + (narrow ? 10 : 0)],
         ['mine', d >= 2 ? 10 + d : 0],
-        ['gunship', d >= 3 ? 4 + d * 0.8 : 0],
+        ['gunship', d >= 3 && !narrow ? 4 + d * 0.8 : 0],
         ['squad', d >= 4 ? 5 + d * 0.5 : 0],
-        ['boats2', d >= 3 ? 6 : 0],
+        ['boats2', d >= 3 && !narrow ? 6 : 0],
       ];
       let tot = 0;
       for (const o of opts) tot += o[1];
@@ -179,7 +240,7 @@
           if (x !== null) g.enemies.push(new G.Boat(g, x, yy));
         }
       } else if (type === 'mine') {
-        const n = d >= 5 ? 3 : 2;
+        const n = narrow ? 1 : d >= 5 ? 3 : 2;
         for (let i = 0; i < n; i++) {
           const yy = y + i * G.rand(50, 90);
           const x = R.randomWaterX(yy, 28);

@@ -43,7 +43,10 @@
       this.gameOverPending = false;
       this.nextLife = 50000;
       this.lowET = 0;
-      this.stats = { kills: 0, rings: 0, gates: 0, bosses: 0 };
+      this.slowT = 0;
+      this.streaks = [];
+      this.look = G.LOOKS[0];
+      this.stats = { kills: 0, rings: 0, gates: 0, bosses: 0, depots: 0 };
       this.level.ensure(0);
       this.terrain.ensure(0, 5);
       if (mode !== 'attract') this.showBanner();
@@ -56,7 +59,12 @@
 
     drainRate() {
       const k = Math.pow(this.speed / 160, 0.75);
-      return 2.7 * k * (this.boss ? 0.45 : 1);
+      return 3 * k * (this.boss ? 0.45 : 1);
+    }
+
+    // Krótkie spowolnienie czasu (np. przy katastrofie).
+    slowmo(t) {
+      this.slowT = Math.max(this.slowT, t);
     }
 
     showBanner() {
@@ -92,7 +100,15 @@
       this.comboT = 2.4;
       this.mult = Math.min(8, 1 + Math.floor(this.combo / 4));
       this.addScore(e.score * this.mult, e.x, e.y);
-      this.player.energy = Math.min(100, this.player.energy + 1.6);
+      if (e.kind === 'depot') {
+        this.stats.depots++;
+        return;
+      }
+      if (e.expl >= 1.7) {
+        this.slowmo(0.18);
+        this.fx.shake(10);
+      }
+      this.player.energy = Math.min(100, this.player.energy + 1);
       if (Math.random() < e.drop) {
         const p = this.player;
         let type = G.pick(['W', 'M', 'R', 'W', 'M']);
@@ -122,7 +138,7 @@
 
     onRing(r) {
       const p = this.player;
-      p.energy = Math.min(100, p.energy + 24);
+      p.energy = Math.min(100, p.energy + 18);
       this.stats.rings++;
       this.addScore(50 * this.mult, r.x, r.y);
       G.audio.ring();
@@ -172,7 +188,10 @@
     onBossEscaped() {}
 
     onPlayerDeath(reason) {
-      const txt = { energy: 'REAKTOR WYCZERPANY', field: 'ZDERZENIE Z POLEM SIŁOWYM', hull: 'MASZYNA ZESTRZELONA' }[reason] || 'MASZYNA ZNISZCZONA';
+      const txt = {
+        energy: 'REAKTOR WYCZERPANY', field: 'ZDERZENIE Z POLEM SIŁOWYM', hull: 'MASZYNA ZESTRZELONA',
+        wall: 'ROZBITY O BRZEG', crash: 'ZDERZENIE Z WROGIEM',
+      }[reason] || 'MASZYNA ZNISZCZONA';
       this.message(txt, '#ff6a5a');
       this.combo = 0;
       this.mult = 1;
@@ -190,7 +209,7 @@
         return;
       }
       const p = this.player;
-      const sp = this.river.spans(p.y).sort((a, b) => b[1] - b[0] - (a[1] - a[0]))[0];
+      const sp = this.river.widestSpan(p.y + 60);
       p.x = (sp[0] + sp[1]) / 2;
       p.vx = 0;
       p.bank = 0;
@@ -201,8 +220,11 @@
       p.wlevel = Math.max(1, p.wlevel - 1);
       p.missiles = Math.max(p.missiles, 3);
       this.eBullets.length = 0;
+      // oczyść najbliższy odcinek, żeby nie zginąć zaraz po odrodzeniu
       for (const e of this.enemies) {
-        if (e.air && !e.dead && e.sy > H * 0.4) e.die(true);
+        if (e.dead || e.kind === 'depot' || e.kind === 'pylon' || e.kind === 'turret') continue;
+        const dy = e.y - p.y;
+        if ((e.air && e.sy > H * 0.4) || (dy > -120 && dy < 520)) e.die(true);
       }
     }
 
@@ -215,6 +237,7 @@
 
     // ---------- aktualizacja ----------
     update(dt) {
+      this.updateLook();
       if (this.mode === 'attract') {
         this.camY += this.speed * dt;
         this.level.ensure(this.camY);
@@ -222,6 +245,10 @@
         this.terrain.update(dt, this.camY, this.speed);
         this.fx.update(dt);
         return;
+      }
+      if (this.slowT > 0) {
+        this.slowT = Math.max(0, this.slowT - dt);
+        dt *= G.lerp(1, 0.3, G.clamp(this.slowT / 0.4, 0, 1));
       }
       const I = G.Input, p = this.player;
       this.time += dt;
@@ -307,6 +334,7 @@
       for (const m of this.msgs) m.t += dt;
       this.msgs = this.msgs.filter((m) => m.t < 2.6);
       this.fx.update(dt);
+      this.updateStreaks(dt);
       G.audio.engine(p.alive, G.clamp((this.speed - 95) / 205, 0, 1));
 
       if (this.finished) {
@@ -317,6 +345,8 @@
 
     updateBullets(dt) {
       const p = this.player;
+      // przy sterowaniu dotykiem działka strzelają same, więc nie niszczą stacji energii
+      const touchFire = G.Input.lastDevice === 'touch';
       // pociski gracza
       for (let i = this.pBullets.length - 1; i >= 0; i--) {
         const b = this.pBullets[i];
@@ -327,7 +357,7 @@
         if (this.boss && this.boss.hitAt(b.x, b.y, b.dmg)) hit = true;
         if (!hit) {
           for (const e of this.enemies) {
-            if (e.dead) continue;
+            if (e.dead || (e.kind === 'depot' && touchFire)) continue;
             const rr = e.r + 5;
             if (G.dist2(b.x, b.y, e.x, e.y) < rr * rr) {
               e.hit(b.dmg);
@@ -369,15 +399,24 @@
           this.eBullets.pop();
         }
       }
-      // zderzenia z jednostkami powietrznymi
+      // zderzenia: kontakt z dowolną jednostką wroga kończy lot (stacje energii są bezpieczne)
       if (p.alive) {
+        const sx = 1 - Math.abs(p.bank) * 0.28;
         for (const e of this.enemies) {
-          if (!e.air || e.dead) continue;
-          const rr = e.r + 18;
-          if (G.dist2(e.x, e.y, p.x, p.y) < rr * rr) {
-            if (p.inv <= 0) p.damage(e.kind === 'gunship' ? 45 : 28);
-            e.die();
+          if (e.dead || e.kind === 'depot' || e.kind === 'turret') continue;
+          const dx = (e.x - p.x) / (e.r + 22 * sx), dy = (e.y - p.y) / (e.r + 24);
+          if (dx * dx + dy * dy >= 1) continue;
+          if (p.inv > 0) {
+            if (e.kind !== 'pylon') e.die(true);
+            continue;
           }
+          if (e.kind !== 'pylon') e.die(true);
+          p.kill('crash');
+          break;
+        }
+        const b = this.boss;
+        if (p.alive && b && p.inv <= 0 && (b.state === 'fight' || b.state === 'enter')) {
+          if (Math.abs(p.x - b.x) < 150 && Math.abs(p.y - b.y) < 92) p.kill('crash');
         }
       }
     }
@@ -390,7 +429,7 @@
         const d = G.dist2(x, y, m.x, m.y);
         if (d < bd) { bd = d; best = ref; }
       };
-      for (const e of this.enemies) if (!e.dead && e.kind !== 'mine') consider(e.x, e.y, e);
+      for (const e of this.enemies) if (!e.dead && e.kind !== 'mine' && e.kind !== 'depot') consider(e.x, e.y, e);
       if (this.boss) {
         const b = this.boss;
         for (const t of b.turrets) if (t.alive) { const [x, y] = b.partWorld(t); consider(x, y, { boss: b, part: t }); }
@@ -466,12 +505,63 @@
       }
     }
 
+    // ---------- wygląd sektora i smugi prędkości ----------
+    updateLook() {
+      const zb = this.river.zoneBlend(this.camY + H * 0.5);
+      if (zb) this.look = G.mixObj(G.LOOKS[zb.a.look], G.LOOKS[zb.b.look], zb.t);
+    }
+
+    updateStreaks(dt) {
+      const k = G.clamp((this.speed - 205) / 95, 0, 1);
+      if (k > 0 && this.player.alive && Math.random() < k * 0.9) {
+        this.streaks.push({ x: G.rand(10, W - 10), y: -120, len: G.rand(70, 170), v: G.rand(1.6, 2.6), a: G.rand(0.08, 0.2) * k });
+      }
+      for (const s of this.streaks) s.y += this.speed * s.v * dt;
+      this.streaks = this.streaks.filter((s) => s.y - s.len < H);
+    }
+
+    drawStreaks(ctx) {
+      if (!this.streaks.length) return;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.lineCap = 'round';
+      ctx.lineWidth = 1.6;
+      for (const s of this.streaks) {
+        const g = ctx.createLinearGradient(0, s.y - s.len, 0, s.y);
+        g.addColorStop(0, 'rgba(220,245,255,0)');
+        g.addColorStop(1, `rgba(220,245,255,${s.a})`);
+        ctx.strokeStyle = g;
+        ctx.beginPath(); ctx.moveTo(s.x, s.y - s.len); ctx.lineTo(s.x, s.y); ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // Czerwona poświata przy skrzydle, które zbliża się do ściany.
+    drawWallWarning(ctx) {
+      const p = this.player;
+      if (!p.alive || (p.warnL <= 0 && p.warnR <= 0)) return;
+      const sy = SY(this, p.y);
+      const pulse = 0.75 + 0.25 * Math.sin(this.time * 22);
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      for (const [w, s] of [[p.warnL, -1], [p.warnR, 1]]) {
+        if (w <= 0) continue;
+        const a = w * w * pulse;
+        ctx.globalAlpha = a * 0.85;
+        ctx.drawImage(G.glow('#ff3a2a'), p.x + s * 34 - 32, sy + 10 - 32, 64, 64);
+        ctx.globalAlpha = a * 0.6;
+        ctx.drawImage(G.glow('#ffd0a0'), p.x + s * 32 - 8, sy + 16 - 8, 16, 16);
+      }
+      ctx.restore();
+    }
+
     // ---------- rysowanie ----------
     draw(ctx) {
       const fx = this.fx;
       const sh = fx.shakeAmt;
+      const sc = G.renderScale || 1;
       ctx.save();
-      if (sh > 0) ctx.translate(G.rand(-sh, sh) * 0.6, G.rand(-sh, sh) * 0.6);
+      if (sh > 0) ctx.translate(Math.round(G.rand(-sh, sh) * 0.6 * sc) / sc, Math.round(G.rand(-sh, sh) * 0.6 * sc) / sc);
       this.terrain.drawGround(ctx, this.camY);
       fx.drawDecals(ctx);
       fx.drawWater(ctx);
@@ -487,12 +577,17 @@
       this.drawBullets(ctx);
       if (this.mode !== 'attract') this.player.draw(ctx);
       fx.drawTop(ctx);
-      this.terrain.drawClouds(ctx);
-      fx.drawPopups(ctx);
+      this.drawStreaks(ctx);
+      this.terrain.drawClouds(ctx, this.look.cloud);
       ctx.restore();
 
+      // post-processing: poświata jasnych elementów, korekcja barwna, winieta
+      if (G.canvas) G.Post.bloom(ctx, G.canvas, 0.55);
+      G.Post.grade(ctx, this.look);
       ctx.drawImage(G.S.vignette, 0, 0, W, H);
+      fx.drawPopups(ctx);
       if (this.mode !== 'attract') {
+        this.drawWallWarning(ctx);
         const p = this.player;
         let dmgA = 0;
         if (p.alive && p.hull < 35) dmgA = (0.25 + 0.2 * Math.sin(this.time * 6)) * (1 - p.hull / 35);

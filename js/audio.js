@@ -167,9 +167,12 @@
       tone('square', 980, 980, 0.1, 0.05);
       tone('square', 740, 740, 0.1, 0.05, 0.13);
     },
-    scrape() {
-      if (!ac || !limit('scrape', 120)) return;
-      noise(0.15, 0.25, 900, 300, 'bandpass', 0, null, 2);
+    // Tankowanie: szybkie "tyk-tyk" z tonem rosnącym razem z poziomem energii.
+    refuel(level) {
+      if (!ac || !limit('refuel', 85)) return;
+      const f = 520 + level * 900;
+      tone('sine', f, f * 1.05, 0.06, 0.05);
+      tone('triangle', f * 2, f * 2.1, 0.04, 0.02, 0.01);
     },
     hurt() {
       if (!ac || !limit('hurt', 90)) return;
